@@ -18,6 +18,7 @@
 #include "hardware/watchdog.h"
 
 #ifdef DEBUG
+#pragma message "DEBUG including stdio_usb_init"
 #include <stdio.h>
 #include "pico/stdio_usb.h"
 #define DBG_PRINTF_INIT() stdio_usb_init()
@@ -26,6 +27,9 @@
 #define DBG_PRINTF_INIT() { }
 #define DBG_PRINTF(...) { }
 #endif
+
+#define JPO_LED_PIN 3
+#define JPO_UART uart0
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -574,11 +578,11 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 
 	ctx->status = CMD_SYNC;
 
-	gpio_put(PICO_DEFAULT_LED_PIN, 1);
+	gpio_put(JPO_LED_PIN, 1);
 
 	while (idx < sizeof(ctx->opcode)) {
-		uart_read_blocking(uart0, &recv[idx], 1);
-		gpio_xor_mask((1 << PICO_DEFAULT_LED_PIN));
+		uart_read_blocking(JPO_UART, &recv[idx], 1);
+		gpio_xor_mask((1 << JPO_LED_PIN));
 
 		if (recv[idx] != match[idx]) {
 			// Start again
@@ -596,7 +600,7 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 
 static enum state state_read_opcode(struct cmd_context *ctx)
 {
-	uart_read_blocking(uart0, (uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
+	uart_read_blocking(JPO_UART, (uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
 
 	return STATE_READ_ARGS;
 }
@@ -616,7 +620,7 @@ static enum state state_read_args(struct cmd_context *ctx)
 	ctx->resp_args = ctx->args;
 	ctx->resp_data = (uint8_t *)(ctx->resp_args + desc->resp_nargs);
 
-	uart_read_blocking(uart0, (uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
+	uart_read_blocking(JPO_UART, (uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
 
 	return STATE_READ_DATA;
 }
@@ -637,7 +641,7 @@ static enum state state_read_data(struct cmd_context *ctx)
 
 	// TODO: Check sizes
 
-	uart_read_blocking(uart0, (uint8_t *)ctx->data, ctx->data_len);
+	uart_read_blocking(JPO_UART, (uint8_t *)ctx->data, ctx->data_len);
 
 	return STATE_HANDLE_DATA;
 }
@@ -658,7 +662,7 @@ static enum state state_handle_data(struct cmd_context *ctx)
 
 	size_t resp_len = sizeof(ctx->status) + (sizeof(*ctx->resp_args) * desc->resp_nargs) + ctx->resp_data_len;
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	uart_write_blocking(uart0, ctx->uart_buf, resp_len);
+	uart_write_blocking(JPO_UART, ctx->uart_buf, resp_len);
 
 	return STATE_READ_OPCODE;
 }
@@ -667,7 +671,7 @@ static enum state state_error(struct cmd_context *ctx)
 {
 	size_t resp_len = sizeof(ctx->status);
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	uart_write_blocking(uart0, ctx->uart_buf, resp_len);
+	uart_write_blocking(JPO_UART, ctx->uart_buf, resp_len);
 
 	return STATE_WAIT_FOR_SYNC;
 }
@@ -680,11 +684,23 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
+void flash_led(int blinks, int timeOnMs, int timeOffMs)
+{
+	for(int i = 0; i < blinks; i++) {
+		gpio_put(JPO_LED_PIN, 1);
+		sleep_ms(timeOnMs);
+		gpio_put(JPO_LED_PIN, 0);
+		sleep_ms(timeOffMs);
+	}
+}
+
 int main(void)
 {
-	gpio_init(PICO_DEFAULT_LED_PIN);
-	gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-	gpio_put(PICO_DEFAULT_LED_PIN, 1);
+	gpio_init(JPO_LED_PIN);
+	gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
+	gpio_put(JPO_LED_PIN, 1);
+
+	flash_led(10, 500, 200);
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
@@ -703,10 +719,10 @@ int main(void)
 
 	DBG_PRINTF_INIT();
 
-	uart_init(uart0, UART_BAUD);
+	uart_init(JPO_UART, UART_BAUD);
 	gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
 	gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-	uart_set_hw_flow(uart0, false, false);
+	uart_set_hw_flow(JPO_UART, false, false);
 
 	struct cmd_context ctx;
 	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];

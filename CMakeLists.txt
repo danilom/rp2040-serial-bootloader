@@ -26,35 +26,46 @@ cmake_minimum_required(VERSION 3.13)
 
 include(pico_sdk_import.cmake)
 
-project(test_project C CXX ASM)
+project(jpo_bootloader C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-# Build the bootloader as a standalone thing
+# Build the jpo_bootloader as a standalone thing
 
-add_executable(bootloader main.c)
+add_executable(jpo_bootloader main.c)
+
+##### JPO additions
+#add_definitions(-DDEBUG)
+
+# Does not work...
+# Enable usb output, disable uart output
+pico_enable_stdio_usb(jpo_bootloader 1)
+# pico_enable_stdio_uart(jpo_bootloader 0)
+
+##### end JPO additions
 
 function(target_cl_options option)
-    target_compile_options(bootloader PRIVATE ${option})
-    target_link_options(bootloader PRIVATE ${option})
+    target_compile_options(jpo_bootloader PRIVATE ${option})
+    target_link_options(jpo_bootloader PRIVATE ${option})
 endfunction()
 
 target_cl_options("-Os")
 target_cl_options("-ffunction-sections")
 target_cl_options("-fdata-sections")
-target_link_options(bootloader PRIVATE "LINKER:--gc-sections")
+target_link_options(jpo_bootloader PRIVATE "LINKER:--gc-sections")
 
-pico_add_extra_outputs(bootloader)
-pico_set_binary_type(bootloader copy_to_ram)
+pico_add_extra_outputs(jpo_bootloader)
+pico_set_binary_type(jpo_bootloader copy_to_ram)
 
-set_target_properties(bootloader PROPERTIES COMPILE_FLAGS "-Wall")
+set_target_properties(jpo_bootloader PROPERTIES COMPILE_FLAGS "-Wall")
 
-pico_set_linker_script(bootloader ${CMAKE_CURRENT_SOURCE_DIR}/bootloader.ld)
 
-target_link_libraries(bootloader
+pico_set_linker_script(jpo_bootloader ${CMAKE_CURRENT_SOURCE_DIR}/bootloader.ld)
+
+target_link_libraries(jpo_bootloader
                       pico_stdlib
                       hardware_dma
                       hardware_flash
@@ -67,7 +78,7 @@ set(BOOTLOADER_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 # Build a library to embed into applications
 
 function(bootloader_define_library)
-	set(NAME bootloader)
+	set(NAME jpo_bootloader)
 	set(ORIGINAL_BIN ${CMAKE_CURRENT_BINARY_DIR}/${NAME}.bin)
 	set(BIN_ASM ${CMAKE_CURRENT_BINARY_DIR}/${NAME}_bin.S)
 
