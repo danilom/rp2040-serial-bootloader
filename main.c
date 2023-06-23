@@ -17,6 +17,8 @@
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
 
+#include "pico/stdlib.h"
+
 #ifdef DEBUG
 #pragma message "DEBUG including stdio_usb_init"
 #include <stdio.h>
@@ -30,6 +32,8 @@
 
 #define JPO_LED_PIN 3
 #define JPO_UART uart0
+// Was 12 originally. Make sure to match bootloader.ld
+#define BOOTLOADER_SIZE_KB 32
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -57,7 +61,7 @@
 #define RSP_OK   (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
 #define RSP_ERR  (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
 
-#define IMAGE_HEADER_OFFSET (12 * 1024)
+#define IMAGE_HEADER_OFFSET (BOOTLOADER_SIZE_KB * 1024)
 
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
@@ -684,14 +688,17 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
-void flash_led(int blinks, int timeOnMs, int timeOffMs)
+void flash_led(int blinks, int timeOnMs, int timeOffMs, bool output)
 {
 	for(int i = 0; i < blinks; i++) {
+		if (output) { printf("On %d\n", i); }
 		gpio_put(JPO_LED_PIN, 1);
 		sleep_ms(timeOnMs);
+		if (output) { printf("Off %d\n", i); }
 		gpio_put(JPO_LED_PIN, 0);
 		sleep_ms(timeOffMs);
 	}
+	if (output) { printf("Done blinking\n"); }
 }
 
 int main(void)
@@ -700,7 +707,11 @@ int main(void)
 	gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
 	gpio_put(JPO_LED_PIN, 1);
 
-	flash_led(10, 500, 200);
+	// Initialize chosen serial port
+    stdio_init_all();
+    printf("Started.\n");
+
+	flash_led(100, 500, 200, true);
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);

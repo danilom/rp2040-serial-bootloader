@@ -1,4 +1,8 @@
 {
     "cmake.automaticReconfigure": false,
-    "cmake.configureOnEdit": false
+    "cmake.configureOnEdit": false,
+    "cSpell.words": [
+        "bootloader",
+        "Makefiles"
+    ]
 }
