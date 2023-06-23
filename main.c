@@ -32,6 +32,8 @@
 
 #define JPO_LED_PIN 3
 #define JPO_UART uart0
+bool g_useUsb = true;
+
 // Was 12 originally. Make sure to match bootloader.ld
 #define BOOTLOADER_SIZE_KB 32
 
@@ -66,6 +68,38 @@
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
+
+// JPO functions
+//static inline void uart_write_blocking(uart_inst_t *uart, const uint8_t *src, size_t len) {
+static void serial_write_blocking(const uint8_t *src, size_t len) {
+	if (g_useUsb) {
+		for(uint32_t i = 0; i < len; i++) {
+			putchar_raw(src[i]);
+		}
+		//stdio_flush();
+	}
+	else {
+		uart_write_blocking(JPO_UART, src, len);
+	}
+}
+
+//static inline void uart_read_blocking(uart_inst_t *uart, uint8_t *dst, size_t len) {
+static void serial_read_blocking(uint8_t *dst, size_t len) {
+	if (g_useUsb) {
+		uint32_t idx = 0;
+		while (idx < len) {
+			int c = getchar_timeout_us(1000000); // MICROsec (1/10^6), not millis
+			if (c != PICO_ERROR_TIMEOUT) {
+				dst[idx++] = (c & 0xFF);
+			}
+		}
+	}
+	else {
+		uart_read_blocking(JPO_UART, dst, len);
+	}
+}
+// end JPO functions
+
 
 static void disable_interrupts(void)
 {
@@ -585,7 +619,7 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 	gpio_put(JPO_LED_PIN, 1);
 
 	while (idx < sizeof(ctx->opcode)) {
-		uart_read_blocking(JPO_UART, &recv[idx], 1);
+		serial_read_blocking(&recv[idx], 1);
 		gpio_xor_mask((1 << JPO_LED_PIN));
 
 		if (recv[idx] != match[idx]) {
@@ -604,7 +638,7 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 
 static enum state state_read_opcode(struct cmd_context *ctx)
 {
-	uart_read_blocking(JPO_UART, (uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
+	serial_read_blocking((uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
 
 	return STATE_READ_ARGS;
 }
@@ -624,7 +658,7 @@ static enum state state_read_args(struct cmd_context *ctx)
 	ctx->resp_args = ctx->args;
 	ctx->resp_data = (uint8_t *)(ctx->resp_args + desc->resp_nargs);
 
-	uart_read_blocking(JPO_UART, (uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
+	serial_read_blocking((uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
 
 	return STATE_READ_DATA;
 }
@@ -645,7 +679,7 @@ static enum state state_read_data(struct cmd_context *ctx)
 
 	// TODO: Check sizes
 
-	uart_read_blocking(JPO_UART, (uint8_t *)ctx->data, ctx->data_len);
+	serial_read_blocking((uint8_t *)ctx->data, ctx->data_len);
 
 	return STATE_HANDLE_DATA;
 }
@@ -666,7 +700,7 @@ static enum state state_handle_data(struct cmd_context *ctx)
 
 	size_t resp_len = sizeof(ctx->status) + (sizeof(*ctx->resp_args) * desc->resp_nargs) + ctx->resp_data_len;
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	uart_write_blocking(JPO_UART, ctx->uart_buf, resp_len);
+	serial_write_blocking(ctx->uart_buf, resp_len);
 
 	return STATE_READ_OPCODE;
 }
@@ -675,7 +709,7 @@ static enum state state_error(struct cmd_context *ctx)
 {
 	size_t resp_len = sizeof(ctx->status);
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	uart_write_blocking(JPO_UART, ctx->uart_buf, resp_len);
+	serial_write_blocking(ctx->uart_buf, resp_len);
 
 	return STATE_WAIT_FOR_SYNC;
 }
@@ -688,6 +722,7 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
+// JPO test functions
 void flash_led(int blinks, int timeOnMs, int timeOffMs, bool output)
 {
 	for(int i = 0; i < blinks; i++) {
@@ -701,6 +736,26 @@ void flash_led(int blinks, int timeOnMs, int timeOffMs, bool output)
 	if (output) { printf("Done blinking\n"); }
 }
 
+void echo(int num_blocks, int block_size) {
+	uint8_t buffer[block_size + 1];
+	buffer[block_size] = 0;
+
+	// Wait for first char, print intro
+	//serial_read_blocking(buffer, 1);
+	printf("echo: %d times %d chars\n", num_blocks, block_size);
+
+	for(int i = 0; i < num_blocks; i++) {
+		gpio_put(JPO_LED_PIN, 1);
+		serial_read_blocking(buffer, block_size);
+		gpio_put(JPO_LED_PIN, 0);
+		serial_write_blocking(buffer, block_size);
+	}
+	
+	printf("\necho done\n");
+}
+
+// end JPO test functions
+
 int main(void)
 {
 	gpio_init(JPO_LED_PIN);
@@ -709,9 +764,8 @@ int main(void)
 
 	// Initialize chosen serial port
     stdio_init_all();
-    printf("Started.\n");
-
-	flash_led(100, 500, 200, true);
+	//flash_led(5, 500, 200, false);
+	//echo(10, 4);
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);

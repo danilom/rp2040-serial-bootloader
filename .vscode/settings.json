@@ -3,6 +3,43 @@
     "cmake.configureOnEdit": false,
     "cSpell.words": [
         "bootloader",
-        "Makefiles"
-    ]
+        "CRCC",
+        "gpio",
+        "ICER",
+        "ICPR",
+        "Makefiles",
+        "NARG",
+        "NVIC",
+        "OKOK",
+        "PICO",
+        "QSPI",
+        "SRAM",
+        "SYSCFG",
+        "VTOR"
+    ],
+    "files.associations": {
+        "array": "c",
+        "atomic": "c",
+        "bit": "c",
+        "*.tcc": "c",
+        "concepts": "c",
+        "cstddef": "c",
+        "cstdio": "c",
+        "cwchar": "c",
+        "deque": "c",
+        "vector": "c",
+        "functional": "c",
+        "memory": "c",
+        "memory_resource": "c",
+        "string_view": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "random": "c",
+        "initializer_list": "c",
+        "new": "c",
+        "stdexcept": "c",
+        "string": "c",
+        "system_error": "c",
+        "typeinfo": "c"
+    }
 }
