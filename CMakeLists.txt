@@ -38,9 +38,6 @@ pico_sdk_init()
 add_executable(jpo_bootloader main.c)
 
 ##### JPO additions
-#add_definitions(-DDEBUG)
-
-# Does not work...
 # Enable usb output, disable uart output
 pico_enable_stdio_usb(jpo_bootloader 1)
 # pico_enable_stdio_uart(jpo_bootloader 0)
@@ -76,7 +73,6 @@ target_link_libraries(jpo_bootloader
 set(BOOTLOADER_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 # Build a library to embed into applications
-
 function(bootloader_define_library)
 	set(NAME jpo_bootloader)
 	set(ORIGINAL_BIN ${CMAKE_CURRENT_BINARY_DIR}/${NAME}.bin)
@@ -141,3 +137,17 @@ function(bootloader_build_standalone NAME)
 	pico_set_linker_script(${NAME} ${BOOTLOADER_DIR}/standalone.ld)
 	pico_add_bin_output(${NAME})
 endfunction()
+
+# Copy to JPO_PATH/resources/bin
+if (DEFINED ENV{JPO_PATH})
+file(TO_CMAKE_PATH "$ENV{JPO_PATH}" JPO_PATH)	
+message("JPO_PATH (from environment) is ${JPO_PATH}")
+
+add_custom_command(
+	TARGET ${PROJECT_NAME} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy
+			"${CMAKE_CURRENT_BINARY_DIR}/jpo_bootloader.uf2"
+			"${JPO_PATH}/resources/bin/jpo_bootloader.uf2")
+else()
+message(SEND_ERROR "Environment variable JPO_PATH not set. Will not copy the binary to JPO_PATH.")
+endif()
