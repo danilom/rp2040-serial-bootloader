@@ -18,6 +18,7 @@
 #include "hardware/watchdog.h"
 
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 
 #ifdef DEBUG
 #pragma message "DEBUG including stdio_usb_init"
@@ -556,6 +557,16 @@ static void do_reboot(bool to_bootloader)
 		asm("");
 	}
 }
+static void do_reboot_to_bootsel(void)
+{
+	// Micropython does this before the reboot, it doesn't compile here
+	//rosc_hw->ctrl = ROSC_CTRL_ENABLE_VALUE_ENABLE << ROSC_CTRL_ENABLE_LSB;
+	reset_usb_boot(0, 0);
+	while (1) {
+		tight_loop_contents();
+		asm("");
+	}
+}
 
 static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
 {
@@ -568,6 +579,9 @@ static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t 
 static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
 	// Will never return
+	if (args_in[0] == 2) {
+		do_reboot_to_bootsel();
+	}
 	do_reboot(args_in[0]);
 
 	return RSP_ERR;
@@ -616,11 +630,11 @@ static enum state state_wait_for_sync(struct cmd_context *ctx)
 
 	ctx->status = CMD_SYNC;
 
-	gpio_put(JPO_LED_PIN, 1);
+	// gpio_put(JPO_LED_PIN, 1);
 
 	while (idx < sizeof(ctx->opcode)) {
 		serial_read_blocking(&recv[idx], 1);
-		gpio_xor_mask((1 << JPO_LED_PIN));
+		// gpio_xor_mask((1 << JPO_LED_PIN));
 
 		if (recv[idx] != match[idx]) {
 			// Start again
@@ -758,14 +772,12 @@ void echo(int num_blocks, int block_size) {
 
 int main(void)
 {
-	gpio_init(JPO_LED_PIN);
-	gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
-	gpio_put(JPO_LED_PIN, 1);
+	// gpio_init(JPO_LED_PIN);
+	// gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
+	// gpio_put(JPO_LED_PIN, 1);
 
-	// Initialize chosen serial port
-    stdio_init_all();
-	//flash_led(5, 500, 200, false);
-	//echo(10, 4);
+	// Initialize serial over USB
+	stdio_init_all();
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
