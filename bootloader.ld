@@ -21,14 +21,17 @@
     __stack (== StackTop)
 */
 
-/* Limit flash to 32k, so we can use 32-36k for the image header 
+/* JPO: Limit flash to 32k, so we can use 32-36k for the image header 
    Without USB/stdio 12k was enough. A lower value like 22k may be 
    possible, but leaving space for expansion. 
 */
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 32k
-    RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 256k
+    FLASH(rx)             : ORIGIN = 0x10000000,       LENGTH = 32k
+    /* JPO: overwrite user program header */
+    FLASH_USER_HEADER(rx) : ORIGIN = 0x10000000 + 32k, LENGTH = 256
+
+    RAM(rwx)       : ORIGIN = 0x20000000, LENGTH = 256k
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
 }
@@ -98,6 +101,16 @@ SECTIONS
     } > FLASH
     __binary_info_end = .;
     . = ALIGN(4);
+
+    /* JPO: remove user program header,
+       so the user program does not run after flashing a bootloader uf2 */
+    .remove_user_header :
+    {
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        *(.remove_user_header)
+    } > FLASH_USER_HEADER
 
     /* Vector table goes first in RAM, to avoid large alignment hole */
    .ram_vector_table (COPY): {
