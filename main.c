@@ -455,7 +455,7 @@ static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	return RSP_OK;
 }
 
-struct image_header {
+struct image_header { 
 	uint32_t vtor;
 	uint32_t size;
 	uint32_t crc;
@@ -770,14 +770,29 @@ void echo(int num_blocks, int block_size) {
 
 // end JPO test functions
 
+void init_serial(void) {
+	// USB
+	// BUG FIX: delay mitigates the "Open (SetCommState): Unknown error code 31" bug,
+	// which requires the user to physically reset the brain. 
+	// It still happens, but with no delay it was happening after every soft (watchdog) reboot. 
+	// see https://www.pivotaltracker.com/story/show/185554935
+	// NOTE: use the same fix in the SDK
+	sleep_ms(500);
+	stdio_init_all();
+
+
+	// UART
+	uart_init(JPO_UART, UART_BAUD);
+	gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+	gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+	uart_set_hw_flow(JPO_UART, false, false);
+}
+
 int main(void)
 {
 	// gpio_init(JPO_LED_PIN);
 	// gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
 	// gpio_put(JPO_LED_PIN, 1);
-
-	// Initialize serial over USB
-	stdio_init_all();
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
@@ -796,10 +811,7 @@ int main(void)
 
 	DBG_PRINTF_INIT();
 
-	uart_init(JPO_UART, UART_BAUD);
-	gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-	gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-	uart_set_hw_flow(JPO_UART, false, false);
+	init_serial();
 
 	struct cmd_context ctx;
 	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
