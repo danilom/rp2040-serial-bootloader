@@ -37,12 +37,31 @@ pico_sdk_init()
 
 add_executable(jpo_bootloader main.c)
 
-##### JPO additions
+###### JPO additions
 # Enable usb output, disable uart output
 pico_enable_stdio_usb(jpo_bootloader 1)
 # pico_enable_stdio_uart(jpo_bootloader 0)
 
-##### end JPO additions
+### Prerequisites
+set(TO_FIX "To fix, (re)install the JPO tools.")
+if (NOT DEFINED ENV{JPO_PATH})
+	message(FATAL_ERROR "Environment variable JPO_PATH not set. ${TO_FIX}")
+endif()
+# Fix backslashes in Windows
+file(TO_CMAKE_PATH "$ENV{JPO_PATH}" JPO_PATH)
+message("JPO_PATH (from environment) is ${JPO_PATH}")
+
+### Includes
+target_include_directories(${PROJECT_NAME}
+	# PRIVATE "${JPO_PATH}/sdk/hal/include"
+	PRIVATE "${JPO_PATH}/sdk/jcomp/include"		
+)
+target_link_directories(${PROJECT_NAME}
+	# PRIVATE "${JPO_PATH}/sdk/build/hal"
+	PRIVATE "${JPO_PATH}/sdk/build/jcomp"		
+)
+
+###### end JPO additions
 
 function(target_cl_options option)
     target_compile_options(jpo_bootloader PRIVATE ${option})
@@ -68,7 +87,9 @@ target_link_libraries(jpo_bootloader
                       hardware_flash
                       hardware_structs
                       hardware_resets
-                      cmsis_core)
+                      cmsis_core
+					  jpo_jcomp
+					  )
 
 set(BOOTLOADER_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
@@ -139,15 +160,8 @@ function(bootloader_build_standalone NAME)
 endfunction()
 
 # Copy to JPO_PATH/resources/bin
-if (DEFINED ENV{JPO_PATH})
-file(TO_CMAKE_PATH "$ENV{JPO_PATH}" JPO_PATH)	
-message("JPO_PATH (from environment) is ${JPO_PATH}")
-
 add_custom_command(
 	TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy
 			"${CMAKE_CURRENT_BINARY_DIR}/jpo_bootloader.uf2"
 			"${JPO_PATH}/resources/bin/jpo_bootloader.uf2")
-else()
-message(SEND_ERROR "Environment variable JPO_PATH not set. Will not copy the binary to JPO_PATH.")
-endif()

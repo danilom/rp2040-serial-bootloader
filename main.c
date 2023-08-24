@@ -20,6 +20,37 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 
+//#define JCOMP_TEST
+#ifdef JCOMP_TEST
+#include "jpo/jcomp_protocol.h"
+
+// Not real code, just a sample to test linking
+void sample_event_processing() {
+    JCOMP_MSG msg = NULL;
+    JCOMP_RV rv = jcomp_receive_msg(&msg, 30000);
+    if (rv) {
+        return;
+    }
+    uint8_t request_id = 1; // msg->id
+    jcomp_destroy_msg(msg);
+
+    // sample response
+    // TODO: make a real test
+    JCOMP_MSG response = jcomp_create_response(request_id, 5);
+    jcomp_msg_set_payload(response, 0, (uint8_t*)"Hello", 5);
+    jcomp_send_msg(response);
+    jcomp_destroy_msg(response);
+
+    JCOMP_MSG event = jcomp_create_event(5);
+    jcomp_msg_set_payload(event, 0, (uint8_t*)"Event", 5);
+    jcomp_send_msg(event);
+    jcomp_destroy_msg(event);
+}
+
+#endif
+
+
+
 #ifdef DEBUG
 #pragma message "DEBUG including stdio_usb_init"
 #include <stdio.h>
@@ -793,6 +824,10 @@ int main(void)
 	// gpio_init(JPO_LED_PIN);
 	// gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
 	// gpio_put(JPO_LED_PIN, 1);
+
+#ifdef JCOMP_TEST
+	sample_event_processing();
+#endif
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
