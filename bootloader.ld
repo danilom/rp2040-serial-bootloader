@@ -21,15 +21,15 @@
     __stack (== StackTop)
 */
 
-/* JPO: Limit flash to 32k, so we can use 32-36k for the image header 
-   Without USB/stdio 12k was enough. A lower value like 22k may be 
-   possible, but leaving space for expansion. 
+/* JPO: Limit flash to 44k, so we can use 44-48k for the image header 
+   Without USB/stdio 12k was ok, without JCOMP 32k was ok. 
+   TODO: Change to the lowest possible value. For now, leaving space for expansion. 
 */
 MEMORY
 {
-    FLASH(rx)             : ORIGIN = 0x10000000,       LENGTH = 32k
+    FLASH(rx)             : ORIGIN = 0x10000000,       LENGTH = 44k
     /* JPO: overwrite user program header */
-    FLASH_USER_HEADER(rx) : ORIGIN = 0x10000000 + 32k, LENGTH = 256
+    FLASH_USER_HEADER(rx) : ORIGIN = 0x10000000 + 44k, LENGTH = 256
 
     RAM(rwx)       : ORIGIN = 0x20000000, LENGTH = 256k
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k

@@ -53,11 +53,9 @@ message("JPO_PATH (from environment) is ${JPO_PATH}")
 
 ### Includes
 target_include_directories(${PROJECT_NAME}
-	# PRIVATE "${JPO_PATH}/sdk/hal/include"
 	PRIVATE "${JPO_PATH}/sdk/jcomp/include"		
 )
 target_link_directories(${PROJECT_NAME}
-	# PRIVATE "${JPO_PATH}/sdk/build/hal"
 	PRIVATE "${JPO_PATH}/sdk/build/jcomp"		
 )
 

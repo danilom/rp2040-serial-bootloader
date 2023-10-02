@@ -20,12 +20,20 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 
+// Bootloader size. Must be 4k aligned. 
+// Was 12k originally. Make sure to match:
+// danilom_bootloader/bootloader.ld
+// jpo-software/resources/build_config/jpo_bootloadable.ld
+#define BOOTLOADER_SIZE_KB 44
+
 //#define JCOMP_TEST
 #ifdef JCOMP_TEST
 #include "jpo/jcomp_protocol.h"
 
 // Not real code, just a sample to test linking
-void sample_event_processing() {
+void jcomp_dummy_code() {
+	jcomp_init();
+
     JCOMP_MSG msg = NULL;
     JCOMP_RV rv = jcomp_receive_msg(&msg, 30000);
     if (rv) {
@@ -37,14 +45,18 @@ void sample_event_processing() {
     // sample response
     // TODO: make a real test
     JCOMP_MSG response = jcomp_create_response(request_id, 5);
-    jcomp_msg_set_payload(response, 0, (uint8_t*)"Hello", 5);
+    jcomp_msg_append_str(response, "Hello");
     jcomp_send_msg(response);
     jcomp_destroy_msg(response);
 
     JCOMP_MSG event = jcomp_create_event(5);
-    jcomp_msg_set_payload(event, 0, (uint8_t*)"Event", 5);
+    jcomp_msg_append_str(event, "Event");
     jcomp_send_msg(event);
     jcomp_destroy_msg(event);
+
+	// nonsense code
+	jcomp_receive_msg(&msg, 30000);
+	jcomp_destroy_msg(msg);
 }
 
 #endif
@@ -65,9 +77,6 @@ void sample_event_processing() {
 #define JPO_LED_PIN 3
 #define JPO_UART uart0
 bool g_useUsb = true;
-
-// Was 12 originally. Make sure to match bootloader.ld
-#define BOOTLOADER_SIZE_KB 32
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -826,7 +835,7 @@ int main(void)
 	// gpio_put(JPO_LED_PIN, 1);
 
 #ifdef JCOMP_TEST
-	sample_event_processing();
+	jcomp_dummy_code();
 #endif
 
 	gpio_init(BOOTLOADER_ENTRY_PIN);
