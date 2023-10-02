@@ -26,57 +26,7 @@
 // jpo-software/resources/build_config/jpo_bootloadable.ld
 #define BOOTLOADER_SIZE_KB 44
 
-//#define JCOMP_TEST
-#ifdef JCOMP_TEST
 #include "jpo/jcomp_protocol.h"
-
-// Not real code, just a sample to test linking
-void jcomp_dummy_code() {
-	jcomp_init();
-
-    JCOMP_MSG msg = NULL;
-    JCOMP_RV rv = jcomp_receive_msg(&msg, 30000);
-    if (rv) {
-        return;
-    }
-    uint8_t request_id = 1; // msg->id
-    jcomp_destroy_msg(msg);
-
-    // sample response
-    // TODO: make a real test
-    JCOMP_MSG response = jcomp_create_response(request_id, 5);
-    jcomp_msg_append_str(response, "Hello");
-    jcomp_send_msg(response);
-    jcomp_destroy_msg(response);
-
-    JCOMP_MSG event = jcomp_create_event(5);
-    jcomp_msg_append_str(event, "Event");
-    jcomp_send_msg(event);
-    jcomp_destroy_msg(event);
-
-	// nonsense code
-	jcomp_receive_msg(&msg, 30000);
-	jcomp_destroy_msg(msg);
-}
-
-#endif
-
-
-
-#ifdef DEBUG
-#pragma message "DEBUG including stdio_usb_init"
-#include <stdio.h>
-#include "pico/stdio_usb.h"
-#define DBG_PRINTF_INIT() stdio_usb_init()
-#define DBG_PRINTF(...) printf(__VA_ARGS__)
-#else
-#define DBG_PRINTF_INIT() { }
-#define DBG_PRINTF(...) { }
-#endif
-
-#define JPO_LED_PIN 3
-#define JPO_UART uart0
-bool g_useUsb = true;
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -113,31 +63,35 @@ bool g_useUsb = true;
 // JPO functions
 //static inline void uart_write_blocking(uart_inst_t *uart, const uint8_t *src, size_t len) {
 static void serial_write_blocking(const uint8_t *src, size_t len) {
-	if (g_useUsb) {
-		for(uint32_t i = 0; i < len; i++) {
-			putchar_raw(src[i]);
-		}
-		//stdio_flush();
-	}
-	else {
-		uart_write_blocking(JPO_UART, src, len);
-	}
+	// TODO: replace with JCOMP
+
+	// if (g_useUsb) {
+	// 	for(uint32_t i = 0; i < len; i++) {
+	// 		putchar_raw(src[i]);
+	// 	}
+	// 	//stdio_flush();
+	// }
+	// else {
+	// 	uart_write_blocking(JPO_UART, src, len);
+	// }
 }
 
 //static inline void uart_read_blocking(uart_inst_t *uart, uint8_t *dst, size_t len) {
 static void serial_read_blocking(uint8_t *dst, size_t len) {
-	if (g_useUsb) {
-		uint32_t idx = 0;
-		while (idx < len) {
-			int c = getchar_timeout_us(1000000); // MICROsec (1/10^6), not millis
-			if (c != PICO_ERROR_TIMEOUT) {
-				dst[idx++] = (c & 0xFF);
-			}
-		}
-	}
-	else {
-		uart_read_blocking(JPO_UART, dst, len);
-	}
+	// TODO: replace with JCOMP
+
+	// if (g_useUsb) {
+	// 	uint32_t idx = 0;
+	// 	while (idx < len) {
+	// 		int c = getchar_timeout_us(1000000); // MICROsec (1/10^6), not millis
+	// 		if (c != PICO_ERROR_TIMEOUT) {
+	// 			dst[idx++] = (c & 0xFF);
+	// 		}
+	// 	}
+	// }
+	// else {
+	// 	uart_read_blocking(JPO_UART, dst, len);
+	// }
 }
 // end JPO functions
 
@@ -776,68 +730,19 @@ static bool should_stay_in_bootloader()
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
 }
 
-// JPO test functions
-void flash_led(int blinks, int timeOnMs, int timeOffMs, bool output)
-{
-	for(int i = 0; i < blinks; i++) {
-		if (output) { printf("On %d\n", i); }
-		gpio_put(JPO_LED_PIN, 1);
-		sleep_ms(timeOnMs);
-		if (output) { printf("Off %d\n", i); }
-		gpio_put(JPO_LED_PIN, 0);
-		sleep_ms(timeOffMs);
-	}
-	if (output) { printf("Done blinking\n"); }
-}
-
-void echo(int num_blocks, int block_size) {
-	uint8_t buffer[block_size + 1];
-	buffer[block_size] = 0;
-
-	// Wait for first char, print intro
-	//serial_read_blocking(buffer, 1);
-	printf("echo: %d times %d chars\n", num_blocks, block_size);
-
-	for(int i = 0; i < num_blocks; i++) {
-		gpio_put(JPO_LED_PIN, 1);
-		serial_read_blocking(buffer, block_size);
-		gpio_put(JPO_LED_PIN, 0);
-		serial_write_blocking(buffer, block_size);
-	}
-	
-	printf("\necho done\n");
-}
-
-// end JPO test functions
-
 void init_serial(void) {
-	// USB
+    // USB
 	// BUG FIX: delay mitigates the "Open (SetCommState): Unknown error code 31" bug,
 	// which requires the user to physically reset the brain. 
 	// It still happens, but with no delay it was happening after every soft (watchdog) reboot. 
 	// see https://www.pivotaltracker.com/story/show/185554935
-	// NOTE: use the same fix in the SDK
+    // NOTE: use the same fix in the JPO bootloader
 	sleep_ms(500);
 	stdio_init_all();
-
-
-	// UART
-	uart_init(JPO_UART, UART_BAUD);
-	gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-	gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-	uart_set_hw_flow(JPO_UART, false, false);
 }
 
 int main(void)
 {
-	// gpio_init(JPO_LED_PIN);
-	// gpio_set_dir(JPO_LED_PIN, GPIO_OUT);
-	// gpio_put(JPO_LED_PIN, 1);
-
-#ifdef JCOMP_TEST
-	jcomp_dummy_code();
-#endif
-
 	gpio_init(BOOTLOADER_ENTRY_PIN);
 	gpio_pull_up(BOOTLOADER_ENTRY_PIN);
 	gpio_set_dir(BOOTLOADER_ENTRY_PIN, 0);
@@ -853,49 +758,54 @@ int main(void)
 		jump_to_vtor(vtor);
 	}
 
-	DBG_PRINTF_INIT();
-
 	init_serial();
-
-	struct cmd_context ctx;
-	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
-	ctx.uart_buf = uart_buf;
-	enum state state = STATE_WAIT_FOR_SYNC;
+	jcomp_init();
+	jcomp_set_env_type("BOOT:v1.1");
 
 	while (1) {
-		switch (state) {
-		case STATE_WAIT_FOR_SYNC:
-			DBG_PRINTF("wait_for_sync\n");
-			state = state_wait_for_sync(&ctx);
-			DBG_PRINTF("wait_for_sync done\n");
-			break;
-		case STATE_READ_OPCODE:
-			DBG_PRINTF("read_opcode\n");
-			state = state_read_opcode(&ctx);
-			DBG_PRINTF("read_opcode done\n");
-			break;
-		case STATE_READ_ARGS:
-			DBG_PRINTF("read_args\n");
-			state = state_read_args(&ctx);
-			DBG_PRINTF("read_args done\n");
-			break;
-		case STATE_READ_DATA:
-			DBG_PRINTF("read_data\n");
-			state = state_read_data(&ctx);
-			DBG_PRINTF("read_data done\n");
-			break;
-		case STATE_HANDLE_DATA:
-			DBG_PRINTF("handle_data\n");
-			state = state_handle_data(&ctx);
-			DBG_PRINTF("handle_data done\n");
-			break;
-		case STATE_ERROR:
-			DBG_PRINTF("error\n");
-			state = state_error(&ctx);
-			DBG_PRINTF("error done\n");
-			break;
-		}
+		// TODO
+		sleep_ms(1000);
 	}
+
+	// struct cmd_context ctx;
+	// uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
+	// ctx.uart_buf = uart_buf;
+	// enum state state = STATE_WAIT_FOR_SYNC;
+
+	// while (1) {
+	// 	switch (state) {
+	// 	case STATE_WAIT_FOR_SYNC:
+	// 		DBG_PRINTF("wait_for_sync\n");
+	// 		state = state_wait_for_sync(&ctx);
+	// 		DBG_PRINTF("wait_for_sync done\n");
+	// 		break;
+	// 	case STATE_READ_OPCODE:
+	// 		DBG_PRINTF("read_opcode\n");
+	// 		state = state_read_opcode(&ctx);
+	// 		DBG_PRINTF("read_opcode done\n");
+	// 		break;
+	// 	case STATE_READ_ARGS:
+	// 		DBG_PRINTF("read_args\n");
+	// 		state = state_read_args(&ctx);
+	// 		DBG_PRINTF("read_args done\n");
+	// 		break;
+	// 	case STATE_READ_DATA:
+	// 		DBG_PRINTF("read_data\n");
+	// 		state = state_read_data(&ctx);
+	// 		DBG_PRINTF("read_data done\n");
+	// 		break;
+	// 	case STATE_HANDLE_DATA:
+	// 		DBG_PRINTF("handle_data\n");
+	// 		state = state_handle_data(&ctx);
+	// 		DBG_PRINTF("handle_data done\n");
+	// 		break;
+	// 	case STATE_ERROR:
+	// 		DBG_PRINTF("error\n");
+	// 		state = state_error(&ctx);
+	// 		DBG_PRINTF("error done\n");
+	// 		break;
+	// 	}
+	// }
 
 	return 0;
 }
