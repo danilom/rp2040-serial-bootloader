@@ -592,7 +592,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 //X {
 	//X serial_read_blocking((uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
 	err = jcomp_msg_get_bytes(in_msg, pos, 
-		(uint8_t*) &ctx->opcode,
+		(uint8_t*)&ctx->opcode,
 		sizeof(ctx->opcode), 
 		&size);
 	pos += size;
@@ -622,8 +622,8 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 
 	//X serial_read_blocking((uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
 	err = jcomp_msg_get_bytes(in_msg, pos,
-		(uint8_t*) &ctx->args, 
-		sizeof(ctx->opcode) * desc->nargs, 
+		(uint8_t*)ctx->args, 
+		sizeof(*ctx->args) * desc->nargs, 
 		&size);
 	pos += size;
 
@@ -651,8 +651,8 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	// TODO: Check sizes
 	//X serial_read_blocking((uint8_t *)ctx->data, ctx->data_len);
 	err = jcomp_msg_get_bytes(in_msg, pos,
-		(uint8_t*) &ctx->data, 
-		sizeof(ctx->data_len), 
+		(uint8_t*)ctx->data, 
+		ctx->data_len, 
 		&size);
 	pos += size;
 
