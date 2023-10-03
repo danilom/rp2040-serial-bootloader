@@ -20,13 +20,18 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 
+#include "jpo/jcomp_protocol.h"
+#include "jpo/debug.h"
+
 // Bootloader size. Must be 4k aligned. 
 // Was 12k originally. Make sure to match:
 // danilom_bootloader/bootloader.ld
 // jpo-software/resources/build_config/jpo_bootloadable.ld
 #define BOOTLOADER_SIZE_KB 44
 
-#include "jpo/jcomp_protocol.h"
+// BOOT followed by additional info like the version
+#define ENV_STRING "BOOT:v1.1.5"
+
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -59,42 +64,6 @@
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
-
-// JPO functions
-//static inline void uart_write_blocking(uart_inst_t *uart, const uint8_t *src, size_t len) {
-static void serial_write_blocking(const uint8_t *src, size_t len) {
-	// TODO: replace with JCOMP
-
-	// if (g_useUsb) {
-	// 	for(uint32_t i = 0; i < len; i++) {
-	// 		putchar_raw(src[i]);
-	// 	}
-	// 	//stdio_flush();
-	// }
-	// else {
-	// 	uart_write_blocking(JPO_UART, src, len);
-	// }
-}
-
-//static inline void uart_read_blocking(uart_inst_t *uart, uint8_t *dst, size_t len) {
-static void serial_read_blocking(uint8_t *dst, size_t len) {
-	// TODO: replace with JCOMP
-
-	// if (g_useUsb) {
-	// 	uint32_t idx = 0;
-	// 	while (idx < len) {
-	// 		int c = getchar_timeout_us(1000000); // MICROsec (1/10^6), not millis
-	// 		if (c != PICO_ERROR_TIMEOUT) {
-	// 			dst[idx++] = (c & 0xFF);
-	// 		}
-	// 	}
-	// }
-	// else {
-	// 	uart_read_blocking(JPO_UART, dst, len);
-	// }
-}
-// end JPO functions
-
 
 static void disable_interrupts(void)
 {
@@ -607,54 +576,39 @@ struct cmd_context {
 	uint32_t resp_data_len;
 };
 
-enum state {
-	STATE_WAIT_FOR_SYNC,
-	STATE_READ_OPCODE,
-	STATE_READ_ARGS,
-	STATE_READ_DATA,
-	STATE_HANDLE_DATA,
-	STATE_ERROR,
-};
+// TODO: rename, it's no longer a state
+#define STATE_ERROR (JCOMP_ERR_CLIENT + 1)
 
-static enum state state_wait_for_sync(struct cmd_context *ctx)
+
+
+static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg) 
 {
-	int idx = 0;
-	uint8_t *recv = (uint8_t *)&ctx->opcode;
-	uint8_t *match = (uint8_t *)&ctx->status;
+	size_t size = 0;
+	uint16_t pos = 0; // position
+	JCOMP_RV err = JCOMP_OK;
 
-	ctx->status = CMD_SYNC;
+	// Read opcode
+//X static enum state state_read_opcode(struct cmd_context *ctx)
+//X {
+	//X serial_read_blocking((uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
+	err = jcomp_msg_get_bytes(in_msg, pos, 
+		(uint8_t*) &ctx->opcode,
+		sizeof(ctx->opcode), 
+		&size);
+	pos += size;
 
-	// gpio_put(JPO_LED_PIN, 1);
-
-	while (idx < sizeof(ctx->opcode)) {
-		serial_read_blocking(&recv[idx], 1);
-		// gpio_xor_mask((1 << JPO_LED_PIN));
-
-		if (recv[idx] != match[idx]) {
-			// Start again
-			idx = 0;
-		} else {
-			// Move on
-			idx++;
-		}
+	if (err) {
+		DBG_SEND("Failed to read opcode: %d", err);
+		return err;
 	}
 
-	assert(ctx->opcode == CMD_SYNC);
-
-	return STATE_READ_ARGS;
-}
-
-static enum state state_read_opcode(struct cmd_context *ctx)
-{
-	serial_read_blocking((uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
-
-	return STATE_READ_ARGS;
-}
-
-static enum state state_read_args(struct cmd_context *ctx)
-{
+	// Read args
+//X static enum state state_read_args(struct cmd_context *ctx)
+//X {
 	const struct command_desc *desc = find_command_desc(ctx->opcode);
-	if (!desc) {
+	if (!desc) 
+	{
+		DBG_SEND("Failed to find cmd desc for opcode: %d", ctx->opcode);
 		// TODO: Error handler that can do args?
 		ctx->status = RSP_ERR;
 		return STATE_ERROR;
@@ -666,18 +620,27 @@ static enum state state_read_args(struct cmd_context *ctx)
 	ctx->resp_args = ctx->args;
 	ctx->resp_data = (uint8_t *)(ctx->resp_args + desc->resp_nargs);
 
-	serial_read_blocking((uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
+	//X serial_read_blocking((uint8_t *)ctx->args, sizeof(*ctx->args) * desc->nargs);
+	err = jcomp_msg_get_bytes(in_msg, pos,
+		(uint8_t*) &ctx->args, 
+		sizeof(ctx->opcode) * desc->nargs, 
+		&size);
+	pos += size;
 
-	return STATE_READ_DATA;
-}
+	if (err) {
+		DBG_SEND("Failed to read args: %d", err);
+		return err;
+	}
 
-static enum state state_read_data(struct cmd_context *ctx)
-{
-	const struct command_desc *desc = ctx->desc;
+	// Read data
+//X static enum state state_read_data(struct cmd_context *ctx)
+//X {
+	//X const struct command_desc *desc = ctx->desc;
 
 	if (desc->size) {
 		ctx->status = desc->size(ctx->args, &ctx->data_len, &ctx->resp_data_len);
 		if (is_error(ctx->status)) {
+			DBG_SEND("Failed to find data size, ctx->status: %d", ctx->status);
 			return STATE_ERROR;
 		}
 	} else {
@@ -686,19 +649,59 @@ static enum state state_read_data(struct cmd_context *ctx)
 	}
 
 	// TODO: Check sizes
+	//X serial_read_blocking((uint8_t *)ctx->data, ctx->data_len);
+	err = jcomp_msg_get_bytes(in_msg, pos,
+		(uint8_t*) &ctx->data, 
+		sizeof(ctx->data_len), 
+		&size);
+	pos += size;
 
-	serial_read_blocking((uint8_t *)ctx->data, ctx->data_len);
+	if (err) 
+	{
+		DBG_SEND("Failed to read data: %d", err);
+		return err;
+	}
 
-	return STATE_HANDLE_DATA;
+	return JCOMP_OK;
 }
 
-static enum state state_handle_data(struct cmd_context *ctx)
+static JCOMP_RV send_response_core(JCOMP_MSG resp, uint8_t* payload, size_t len) {
+	JCOMP_RV err = jcomp_msg_set_bytes(resp, 0, payload, len);
+	if (err) 
+	{
+		DBG_SEND("ERROR: failed to set response bytes: %d", err);
+		return err;
+	}
+	err = jcomp_send_msg(resp);
+	if (err) 
+	{
+		DBG_SEND("ERROR: failed to send response: %d", err);
+		return err;
+	}
+	return JCOMP_OK;
+}
+static JCOMP_RV send_response(uint8_t request_id, uint8_t* payload, size_t len) {
+	JCOMP_MSG resp = jcomp_create_response(request_id, len);
+	if (!resp) 
+	{
+		DBG_SEND("ERROR: failed to create response");
+		return STATE_ERROR;
+	}
+	JCOMP_RV err = send_response_core(resp, payload, len);
+	jcomp_destroy_msg(resp);
+	return err;
+}
+
+static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 {
+//X	static enum state state_handle_data(struct cmd_context *ctx)
+//{
 	const struct command_desc *desc = ctx->desc;
 
 	if (desc->handle) {
 		ctx->status = desc->handle(ctx->args, ctx->data, ctx->resp_args, ctx->resp_data);
 		if (is_error(ctx->status)) {
+			DBG_SEND("Failed to handle data, ctx->status: %d", ctx->status);
 			return STATE_ERROR;
 		}
 	} else {
@@ -708,19 +711,20 @@ static enum state state_handle_data(struct cmd_context *ctx)
 
 	size_t resp_len = sizeof(ctx->status) + (sizeof(*ctx->resp_args) * desc->resp_nargs) + ctx->resp_data_len;
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	serial_write_blocking(ctx->uart_buf, resp_len);
-
-	return STATE_READ_OPCODE;
+	
+	JCOMP_RV err = send_response(request_id, ctx->uart_buf, resp_len);
+	return err;
 }
 
-static enum state state_error(struct cmd_context *ctx)
-{
-	size_t resp_len = sizeof(ctx->status);
-	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-	serial_write_blocking(ctx->uart_buf, resp_len);
 
-	return STATE_WAIT_FOR_SYNC;
-}
+// static enum state state_error(struct cmd_context *ctx)
+// {
+// 	size_t resp_len = sizeof(ctx->status);
+// 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
+// 	serial_write_blocking(ctx->uart_buf, resp_len);
+
+// 	return STATE_WAIT_FOR_SYNC;
+// }
 
 static bool should_stay_in_bootloader()
 {
@@ -728,6 +732,24 @@ static bool should_stay_in_bootloader()
 		(watchdog_hw->scratch[6] == ~BOOTLOADER_ENTRY_MAGIC);
 
 	return !gpio_get(BOOTLOADER_ENTRY_PIN) || wd_says_so;
+}
+
+void process_message(struct cmd_context *ctx, JCOMP_MSG in_msg) {
+	JCOMP_RV err = read_message(ctx, in_msg);
+	if (err) 
+	{
+		DBG_SEND("Failed to read message: %d", err);
+		// TODO: send error
+		return;
+	}
+	err = handle_data(ctx, jcomp_msg_id(in_msg));
+	if (err) 
+	{
+		DBG_SEND("Failed to handle data: %d", err);
+		// TODO: send error
+		return;
+	}
+	// Done
 }
 
 void init_serial(void) {
@@ -760,11 +782,20 @@ int main(void)
 
 	init_serial();
 	jcomp_init();
-	jcomp_set_env_type("BOOT:v1.1");
+	jcomp_set_env_type(ENV_STRING);
 
-	while (1) {
-		// TODO
-		sleep_ms(1000);
+	struct cmd_context ctx;
+	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
+	ctx.uart_buf = uart_buf;
+
+	while (true) 
+	{
+		JCOMP_MSG in_msg = NULL;
+		JCOMP_RV rv = jcomp_receive_msg(&in_msg, 30000);
+		if (rv == JCOMP_OK) {
+			process_message(&ctx, in_msg);
+			jcomp_destroy_msg(in_msg);
+		}
 	}
 
 	// struct cmd_context ctx;
