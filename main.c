@@ -26,12 +26,13 @@
 // Bootloader size. Must be 4k aligned. 
 // Currently, 38k fits, but using 40k for alignment.
 // Was 12k originally. Make sure to match:
-// danilom_bootloader/bootloader.ld
-// jpo-software/resources/build_config/jpo_bootloadable.ld
+// 1) danilom_bootloader/bootloader.ld
+// 2) jpo-software/resources/build_config/jpo_bootloadable.ld
+// 3) danilom_micropython/ports/rp2/jpo_memmap_mp.ld
 #define BOOTLOADER_SIZE_KB 40
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v1.1.103"
+#define ENV_STRING "BOOT:v1.1.104"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -701,11 +702,11 @@ int main(void)
 		JCOMP_RV rv = jcomp_receive_msg(&in_msg, 30000);
 		if (rv == JCOMP_OK) {
 			process_message(&ctx, in_msg);
-			jcomp_destroy_msg(in_msg);
 		}
 		else {
 			// Error receiving. Not much we can do.
 		}
+		jcomp_destroy_msg(in_msg);
 	}
 
 	return 0;
