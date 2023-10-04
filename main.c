@@ -24,13 +24,14 @@
 #include "jpo/debug.h"
 
 // Bootloader size. Must be 4k aligned. 
+// Currently, 38k fits, but using 40k for alignment.
 // Was 12k originally. Make sure to match:
 // danilom_bootloader/bootloader.ld
 // jpo-software/resources/build_config/jpo_bootloadable.ld
-#define BOOTLOADER_SIZE_KB 44
+#define BOOTLOADER_SIZE_KB 40
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v1.1.102"
+#define ENV_STRING "BOOT:v1.1.103"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
