@@ -30,7 +30,7 @@
 #define BOOTLOADER_SIZE_KB 44
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v1.1.100"
+#define ENV_STRING "BOOT:v1.1.102"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -581,7 +581,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	return JCOMP_OK;
 }
 
-static JCOMP_RV send_response_core(JCOMP_MSG resp, uint8_t* payload, size_t len) {
+static JCOMP_RV send_response_core(JCOMP_MSG resp, const uint8_t* payload, size_t len) {
 	JCOMP_RV err = jcomp_msg_set_bytes(resp, 0, payload, len);
 	if (err) {
 		DBG_SEND("ERROR: failed to set response bytes: %d", err);
@@ -594,7 +594,7 @@ static JCOMP_RV send_response_core(JCOMP_MSG resp, uint8_t* payload, size_t len)
 	}
 	return JCOMP_OK;
 }
-static JCOMP_RV send_response(uint8_t request_id, uint8_t* payload, size_t len) {
+static JCOMP_RV send_response(uint8_t request_id, const uint8_t* payload, size_t len) {
 	JCOMP_MSG resp = jcomp_create_response(request_id, len);
 	if (!resp) {
 		DBG_SEND("ERROR: failed to create response");
@@ -604,6 +604,11 @@ static JCOMP_RV send_response(uint8_t request_id, uint8_t* payload, size_t len) 
 	jcomp_destroy_msg(resp);
 	return err;
 }
+static JCOMP_RV send_error(uint8_t request_id) {
+	uint32_t data = RSP_ERR;
+	return send_response(request_id, (uint8_t*)&data, sizeof(data));
+}
+
 
 static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 {
@@ -613,7 +618,7 @@ static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 	if (desc->handle) {
 		ctx->status = desc->handle(ctx->args, ctx->data, ctx->resp_args, ctx->resp_data);
 		if (is_error(ctx->status)) {
-			DBG_SEND("Failed to handle data, ctx->status: %d", ctx->status);
+			DBG_SEND("Failed to handle data, ctx->status: 0x%x", ctx->status);
 			return JCOMP_ERR_BOOTLOADER;
 		}
 	} else {
@@ -640,14 +645,14 @@ static bool should_stay_in_bootloader()
 void process_message(struct cmd_context *ctx, JCOMP_MSG in_msg) {
 	JCOMP_RV err = read_message(ctx, in_msg);
 	if (err) {
-		DBG_SEND("Failed to read message: %d", err);
-		// TODO: send error (read)
+		DBG_SEND("Failed to read message rv: %d", err);
+		send_error(jcomp_msg_id(in_msg));
 		return;
 	}
 	err = handle_data(ctx, jcomp_msg_id(in_msg));
 	if (err) {
-		DBG_SEND("Failed to handle data: %d", err);
-		// TODO: send error (handle)
+		DBG_SEND("Failed to handle data rv: %d", err);
+		send_error(jcomp_msg_id(in_msg));
 		return;
 	}
 	// Done
