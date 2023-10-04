@@ -30,8 +30,7 @@
 #define BOOTLOADER_SIZE_KB 44
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v1.1.5"
-
+#define ENV_STRING "BOOT:v1.1.100"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -44,7 +43,6 @@
 #define UART_RX_PIN 1
 #define UART_BAUD   921600
 
-#define CMD_SYNC   (('S' << 0) | ('Y' << 8) | ('N' << 16) | ('C' << 24))
 #define CMD_READ   (('R' << 0) | ('E' << 8) | ('A' << 16) | ('D' << 24))
 #define CMD_CSUM   (('C' << 0) | ('S' << 8) | ('U' << 16) | ('M' << 24))
 #define CMD_CRC    (('C' << 0) | ('R' << 8) | ('C' << 16) | ('C' << 24))
@@ -53,11 +51,12 @@
 #define CMD_SEAL   (('S' << 0) | ('E' << 8) | ('A' << 16) | ('L' << 24))
 #define CMD_GO     (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
 #define CMD_INFO   (('I' << 0) | ('N' << 8) | ('F' << 16) | ('O' << 24))
-#define CMD_REBOOT (('B' << 0) | ('O' << 8) | ('O' << 16) | ('T' << 24))
 
-#define RSP_SYNC (('P' << 0) | ('I' << 8) | ('C' << 16) | ('O' << 24))
 #define RSP_OK   (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
 #define RSP_ERR  (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
+
+// Bootloader error as a JCOMP_RV value
+#define JCOMP_ERR_BOOTLOADER (JCOMP_ERR_CLIENT + 1)
 
 #define IMAGE_HEADER_OFFSET (BOOTLOADER_SIZE_KB * 1024)
 
@@ -98,7 +97,6 @@ static void jump_to_vtor(uint32_t vtor)
 	asm volatile("bx %0"::"r" (reset_vector));
 }
 
-static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t size_read(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
 static uint32_t handle_read(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t size_csum(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
@@ -111,8 +109,6 @@ static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
-static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
-static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 
 struct command_desc {
 	uint32_t opcode;
@@ -123,13 +119,6 @@ struct command_desc {
 };
 
 const struct command_desc cmds[] = {
-	{
-		.opcode = CMD_SYNC,
-		.nargs = 0,
-		.resp_nargs = 0,
-		.size = NULL,
-		.handle = &handle_sync,
-	},
 	{
 		// READ addr len
 		// OKOK [data]
@@ -202,15 +191,6 @@ const struct command_desc cmds[] = {
 		.size = NULL,
 		.handle = &handle_info,
 	},
-	{
-		// BOOT to_bootloader
-		// NO RESPONSE
-		.opcode = CMD_REBOOT,
-		.nargs = 1,
-		.resp_nargs = 0,
-		.size = &size_reboot,
-		.handle = &handle_reboot,
-	},
 };
 const unsigned int N_CMDS = (sizeof(cmds) / sizeof(cmds[0]));
 const uint32_t MAX_NARG = 5;
@@ -219,11 +199,6 @@ const uint32_t MAX_DATA_LEN = 1024; //FLASH_SECTOR_SIZE;
 static bool is_error(uint32_t status)
 {
 	return status == RSP_ERR;
-}
-
-static uint32_t handle_sync(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
-{
-	return RSP_SYNC;
 }
 
 static uint32_t size_read(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
@@ -504,52 +479,6 @@ static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	return RSP_OK;
 }
 
-static void do_reboot(bool to_bootloader)
-{
-	hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
-	if (to_bootloader) {
-		watchdog_hw->scratch[5] = BOOTLOADER_ENTRY_MAGIC;
-		watchdog_hw->scratch[6] = ~BOOTLOADER_ENTRY_MAGIC;
-	} else {
-		watchdog_hw->scratch[5] = 0;
-		watchdog_hw->scratch[6] = 0;
-	}
-	watchdog_reboot(0, 0, 0);
-	while (1) {
-		tight_loop_contents();
-		asm("");
-	}
-}
-static void do_reboot_to_bootsel(void)
-{
-	// Micropython does this before the reboot, it doesn't compile here
-	//rosc_hw->ctrl = ROSC_CTRL_ENABLE_VALUE_ENABLE << ROSC_CTRL_ENABLE_LSB;
-	reset_usb_boot(0, 0);
-	while (1) {
-		tight_loop_contents();
-		asm("");
-	}
-}
-
-static uint32_t size_reboot(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
-{
-	*data_len_out = 0;
-	*resp_data_len_out = 0;
-
-	return RSP_OK;
-}
-
-static uint32_t handle_reboot(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
-{
-	// Will never return
-	if (args_in[0] == 2) {
-		do_reboot_to_bootsel();
-	}
-	do_reboot(args_in[0]);
-
-	return RSP_ERR;
-}
-
 static const struct command_desc *find_command_desc(uint32_t opcode)
 {
 	unsigned int i;
@@ -564,7 +493,7 @@ static const struct command_desc *find_command_desc(uint32_t opcode)
 }
 
 struct cmd_context {
-	uint8_t *uart_buf;
+	uint8_t *uart_buf; // message payload (in/out)
 	const struct command_desc *desc;
 	uint32_t opcode;
 	uint32_t status;
@@ -576,10 +505,6 @@ struct cmd_context {
 	uint32_t resp_data_len;
 };
 
-// TODO: rename, it's no longer a state
-#define STATE_ERROR (JCOMP_ERR_CLIENT + 1)
-
-
 
 static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg) 
 {
@@ -587,9 +512,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	uint16_t pos = 0; // position
 	JCOMP_RV err = JCOMP_OK;
 
-	// Read opcode
-//X static enum state state_read_opcode(struct cmd_context *ctx)
-//X {
+	// Read opcode: state_read_opcode(ctx)
 	//X serial_read_blocking((uint8_t *)&ctx->opcode, sizeof(ctx->opcode));
 	err = jcomp_msg_get_bytes(in_msg, pos, 
 		(uint8_t*)&ctx->opcode,
@@ -602,16 +525,13 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 		return err;
 	}
 
-	// Read args
-//X static enum state state_read_args(struct cmd_context *ctx)
-//X {
+	// Read args: state_read_args(ctx)
 	const struct command_desc *desc = find_command_desc(ctx->opcode);
-	if (!desc) 
-	{
+	if (!desc) {
 		DBG_SEND("Failed to find cmd desc for opcode: %d", ctx->opcode);
-		// TODO: Error handler that can do args?
+		//X TODO: Error handler that can do args?
 		ctx->status = RSP_ERR;
-		return STATE_ERROR;
+		return JCOMP_ERR_BOOTLOADER;
 	}
 
 	ctx->desc = desc;
@@ -632,23 +552,20 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 		return err;
 	}
 
-	// Read data
-//X static enum state state_read_data(struct cmd_context *ctx)
-//X {
+	// Read data: state_read_data(ctx)
 	//X const struct command_desc *desc = ctx->desc;
-
 	if (desc->size) {
 		ctx->status = desc->size(ctx->args, &ctx->data_len, &ctx->resp_data_len);
 		if (is_error(ctx->status)) {
 			DBG_SEND("Failed to find data size, ctx->status: %d", ctx->status);
-			return STATE_ERROR;
+			return JCOMP_ERR_BOOTLOADER;
 		}
 	} else {
 		ctx->data_len = 0;
 		ctx->resp_data_len = 0;
 	}
 
-	// TODO: Check sizes
+	//X TODO: Check sizes
 	//X serial_read_blocking((uint8_t *)ctx->data, ctx->data_len);
 	err = jcomp_msg_get_bytes(in_msg, pos,
 		(uint8_t*)ctx->data, 
@@ -656,8 +573,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 		&size);
 	pos += size;
 
-	if (err) 
-	{
+	if (err) {
 		DBG_SEND("Failed to read data: %d", err);
 		return err;
 	}
@@ -667,14 +583,12 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 
 static JCOMP_RV send_response_core(JCOMP_MSG resp, uint8_t* payload, size_t len) {
 	JCOMP_RV err = jcomp_msg_set_bytes(resp, 0, payload, len);
-	if (err) 
-	{
+	if (err) {
 		DBG_SEND("ERROR: failed to set response bytes: %d", err);
 		return err;
 	}
 	err = jcomp_send_msg(resp);
-	if (err) 
-	{
+	if (err) {
 		DBG_SEND("ERROR: failed to send response: %d", err);
 		return err;
 	}
@@ -682,10 +596,9 @@ static JCOMP_RV send_response_core(JCOMP_MSG resp, uint8_t* payload, size_t len)
 }
 static JCOMP_RV send_response(uint8_t request_id, uint8_t* payload, size_t len) {
 	JCOMP_MSG resp = jcomp_create_response(request_id, len);
-	if (!resp) 
-	{
+	if (!resp) {
 		DBG_SEND("ERROR: failed to create response");
-		return STATE_ERROR;
+		return JCOMP_ERR_BOOTLOADER;
 	}
 	JCOMP_RV err = send_response_core(resp, payload, len);
 	jcomp_destroy_msg(resp);
@@ -694,15 +607,14 @@ static JCOMP_RV send_response(uint8_t request_id, uint8_t* payload, size_t len) 
 
 static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 {
-//X	static enum state state_handle_data(struct cmd_context *ctx)
-//{
+	// Handle data: state_handle_data(ctx)
 	const struct command_desc *desc = ctx->desc;
 
 	if (desc->handle) {
 		ctx->status = desc->handle(ctx->args, ctx->data, ctx->resp_args, ctx->resp_data);
 		if (is_error(ctx->status)) {
 			DBG_SEND("Failed to handle data, ctx->status: %d", ctx->status);
-			return STATE_ERROR;
+			return JCOMP_ERR_BOOTLOADER;
 		}
 	} else {
 		// TODO: Should we just assert(desc->handle)?
@@ -712,19 +624,10 @@ static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 	size_t resp_len = sizeof(ctx->status) + (sizeof(*ctx->resp_args) * desc->resp_nargs) + ctx->resp_data_len;
 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
 	
+	// Send a response
 	JCOMP_RV err = send_response(request_id, ctx->uart_buf, resp_len);
 	return err;
 }
-
-
-// static enum state state_error(struct cmd_context *ctx)
-// {
-// 	size_t resp_len = sizeof(ctx->status);
-// 	memcpy(ctx->uart_buf, &ctx->status, sizeof(ctx->status));
-// 	serial_write_blocking(ctx->uart_buf, resp_len);
-
-// 	return STATE_WAIT_FOR_SYNC;
-// }
 
 static bool should_stay_in_bootloader()
 {
@@ -736,17 +639,15 @@ static bool should_stay_in_bootloader()
 
 void process_message(struct cmd_context *ctx, JCOMP_MSG in_msg) {
 	JCOMP_RV err = read_message(ctx, in_msg);
-	if (err) 
-	{
+	if (err) {
 		DBG_SEND("Failed to read message: %d", err);
-		// TODO: send error
+		// TODO: send error (read)
 		return;
 	}
 	err = handle_data(ctx, jcomp_msg_id(in_msg));
-	if (err) 
-	{
+	if (err) {
 		DBG_SEND("Failed to handle data: %d", err);
-		// TODO: send error
+		// TODO: send error (handle)
 		return;
 	}
 	// Done
@@ -796,47 +697,10 @@ int main(void)
 			process_message(&ctx, in_msg);
 			jcomp_destroy_msg(in_msg);
 		}
+		else {
+			// Error receiving. Not much we can do.
+		}
 	}
-
-	// struct cmd_context ctx;
-	// uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
-	// ctx.uart_buf = uart_buf;
-	// enum state state = STATE_WAIT_FOR_SYNC;
-
-	// while (1) {
-	// 	switch (state) {
-	// 	case STATE_WAIT_FOR_SYNC:
-	// 		DBG_PRINTF("wait_for_sync\n");
-	// 		state = state_wait_for_sync(&ctx);
-	// 		DBG_PRINTF("wait_for_sync done\n");
-	// 		break;
-	// 	case STATE_READ_OPCODE:
-	// 		DBG_PRINTF("read_opcode\n");
-	// 		state = state_read_opcode(&ctx);
-	// 		DBG_PRINTF("read_opcode done\n");
-	// 		break;
-	// 	case STATE_READ_ARGS:
-	// 		DBG_PRINTF("read_args\n");
-	// 		state = state_read_args(&ctx);
-	// 		DBG_PRINTF("read_args done\n");
-	// 		break;
-	// 	case STATE_READ_DATA:
-	// 		DBG_PRINTF("read_data\n");
-	// 		state = state_read_data(&ctx);
-	// 		DBG_PRINTF("read_data done\n");
-	// 		break;
-	// 	case STATE_HANDLE_DATA:
-	// 		DBG_PRINTF("handle_data\n");
-	// 		state = state_handle_data(&ctx);
-	// 		DBG_PRINTF("handle_data done\n");
-	// 		break;
-	// 	case STATE_ERROR:
-	// 		DBG_PRINTF("error\n");
-	// 		state = state_error(&ctx);
-	// 		DBG_PRINTF("error done\n");
-	// 		break;
-	// 	}
-	// }
 
 	return 0;
 }
