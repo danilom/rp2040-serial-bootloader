@@ -597,13 +597,12 @@ static JCOMP_RV send_response_core(JCOMP_MSG resp, const uint8_t* payload, size_
 	return JCOMP_OK;
 }
 static JCOMP_RV send_response(uint8_t request_id, const uint8_t* payload, size_t len) {
-	JCOMP_MSG resp = jcomp_create_response(request_id, len);
+	JCOMP_CREATE_RESPONSE(resp, request_id, len);
 	if (!resp) {
 		DBG_SEND("ERROR: failed to create response");
 		return JCOMP_ERR_BOOTLOADER;
 	}
 	JCOMP_RV err = send_response_core(resp, payload, len);
-	jcomp_destroy_msg(resp);
 	return err;
 }
 static JCOMP_RV send_error(uint8_t request_id) {
@@ -698,15 +697,14 @@ int main(void)
 
 	while (true) 
 	{
-		JCOMP_MSG in_msg = NULL;
-		JCOMP_RV rv = jcomp_receive_msg(&in_msg, 30000);
+		JCOMP_RECEIVE_MSG(in_msg, rv, 30000);
 		if (rv == JCOMP_OK) {
 			process_message(&ctx, in_msg);
 		}
 		else {
 			// Error receiving. Not much we can do.
+			// Timeout is ok, just wait again
 		}
-		jcomp_destroy_msg(in_msg);
 	}
 
 	return 0;
