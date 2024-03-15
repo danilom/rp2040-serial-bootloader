@@ -20,19 +20,19 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 
-#include "jpo/jcomp_protocol.h"
-#include "jpo/debug.h"
+#include "jpo/jcomp/jcomp_protocol.h"
+#include "jpo/jcomp/debug.h"
 
 // Bootloader size. Must be 4k aligned. 
-// Currently, 38k fits, but using 40k for alignment.
+// Currently, ~47k fits, but using 48k for alignment.
 // Was 12k originally. Make sure to match:
 // 1) danilom_bootloader/bootloader.ld
 // 2) jpo-software/resources/build_config/jpo_bootloadable.ld
 // 3) danilom_micropython/ports/rp2/jpo_memmap_mp.ld
-#define BOOTLOADER_SIZE_KB 40
+#define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v1.1.104"
+#define ENV_STRING "BOOT:v2.0.0"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low

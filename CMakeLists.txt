@@ -53,10 +53,12 @@ message("JPO_PATH (from environment) is ${JPO_PATH}")
 
 ### Includes
 target_include_directories(${PROJECT_NAME}
-	PRIVATE "${JPO_PATH}/sdk/jcomp/include"		
+	PRIVATE "${JPO_PATH}/sdk/jcomp/include"
+	PRIVATE "${JPO_PATH}/sdk/jcomp/protocol/include" # protocol
 )
 target_link_directories(${PROJECT_NAME}
-	PRIVATE "${JPO_PATH}/sdk/build/jcomp"		
+	PRIVATE "${JPO_PATH}/sdk/build/jcomp"
+	PRIVATE "${JPO_PATH}/sdk/build/jcomp/protocol" # protocol
 )
 
 ###### end JPO additions
@@ -87,6 +89,7 @@ target_link_libraries(jpo_bootloader
                       hardware_resets
                       cmsis_core
 					  jpo_jcomp
+					  jpo_jcomp_protocol
 					  )
 
 set(BOOTLOADER_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
