@@ -31,6 +31,23 @@ project(jpo_bootloader C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+# Set the board to jpo_brain, in jpo_software repo
+### Prerequisites
+if (NOT DEFINED ENV{JPO_PATH})
+	message(FATAL_ERROR "Environment variable JPO_PATH not set.")
+endif()
+# Fix backslashes in Windows
+file(TO_CMAKE_PATH "$ENV{JPO_PATH}" JPO_PATH)
+message("JPO_PATH (from environment) is ${JPO_PATH}")
+
+# Set board
+set(JPO_BOARD_DIR "${JPO_PATH}/resources/build_config")
+if (NOT EXISTS "${JPO_BOARD_DIR}")
+	message(FATAL_ERROR "Directory '${JPO_BOARD_DIR}' does not exist.")
+endif()
+set(PICO_BOARD_HEADER_DIRS "${JPO_BOARD_DIR}")
+set(PICO_BOARD "jpo_brain")
+
 pico_sdk_init()
 
 # Build the jpo_bootloader as a standalone thing

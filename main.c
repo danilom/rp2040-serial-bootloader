@@ -31,11 +31,8 @@
 // 3) danilom_micropython/ports/rp2/jpo_memmap_mp.ld
 #define BOOTLOADER_SIZE_KB 48
 
-// 16mb
-#define JPO_FLASH_SIZE_BYTES (16*1024*1024)
-
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.1.0"
+#define ENV_STRING "BOOT:v2.1.1"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -67,7 +64,7 @@
 
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
-#define FLASH_ADDR_MAX (XIP_BASE + JPO_FLASH_SIZE_BYTES)
+#define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
 
 static void disable_interrupts(void)
 {
@@ -476,7 +473,7 @@ static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_ar
 static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
 	resp_args_out[0] = WRITE_ADDR_MIN;
-	resp_args_out[1] = (XIP_BASE + JPO_FLASH_SIZE_BYTES) - WRITE_ADDR_MIN;
+	resp_args_out[1] = (XIP_BASE + PICO_FLASH_SIZE_BYTES) - WRITE_ADDR_MIN;
 	resp_args_out[2] = FLASH_SECTOR_SIZE;
 	resp_args_out[3] = FLASH_PAGE_SIZE;
 	resp_args_out[4] = MAX_DATA_LEN;
