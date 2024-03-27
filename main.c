@@ -32,7 +32,7 @@
 #define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.1.1"
+#define ENV_STRING "BOOT:v2.1.02"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -341,7 +341,7 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr < ERASE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX)) {
+	if ((addr < ERASE_ADDR_MIN) || (addr + size > FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
 	}
@@ -361,7 +361,7 @@ static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	if ((addr < WRITE_ADDR_MIN) || (addr + size >= FLASH_ADDR_MAX)) {
+	if ((addr < WRITE_ADDR_MIN) || (addr + size > FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
 	}
