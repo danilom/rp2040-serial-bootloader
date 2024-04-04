@@ -19,6 +19,7 @@
 
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
+#include "pico/time.h" // Perf measurement
 
 #include "jpo/jcomp/jcomp_protocol.h"
 #include "jpo/jcomp/debug.h"
@@ -32,7 +33,7 @@
 #define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.1.02"
+#define ENV_STRING "BOOT:v2.1.03"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -65,6 +66,14 @@
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
+
+// Perf measurement
+static uint32_t _start_ms = 0;
+static uint32_t _flash_total_ms = 0;
+static uint32_t time_ms()
+{
+	return to_ms_since_boot(get_absolute_time());
+}
 
 static void disable_interrupts(void)
 {
@@ -351,7 +360,9 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 		return RSP_ERR;
 	}
 
+	uint32_t start_ms = time_ms();
 	flash_range_erase(addr - XIP_BASE, size);
+	_flash_total_ms += time_ms() - start_ms;
 
 	return RSP_OK;
 }
@@ -388,7 +399,9 @@ static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
+	uint32_t start_ms = time_ms();
 	flash_range_program(addr - XIP_BASE, data_in, size);
+	_flash_total_ms += time_ms() - start_ms;
 
 	resp_args_out[0] = calc_crc32((void *)addr, size);
 
@@ -446,13 +459,20 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 		return RSP_ERR;
 	}
 
+	uint32_t start_ms = time_ms();
 	flash_range_erase(IMAGE_HEADER_OFFSET, FLASH_SECTOR_SIZE);
 	flash_range_program(IMAGE_HEADER_OFFSET, (const uint8_t *)&hdr, sizeof(hdr));
+	_flash_total_ms += time_ms() - start_ms;
 
 	struct image_header *check = (struct image_header *)(XIP_BASE + IMAGE_HEADER_OFFSET);
 	if (memcmp(&hdr, check, sizeof(hdr))) {
 		return RSP_ERR;
 	}
+
+	// Perf info
+	uint32_t total_ms = time_ms() - _start_ms;
+	DBG_SEND("time (ms): total: %d flash: %d", total_ms, _flash_total_ms);
+
 
 	return RSP_OK;
 }
@@ -472,6 +492,9 @@ static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_ar
 
 static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
+	_start_ms = time_ms();
+	_flash_total_ms = 0;
+
 	resp_args_out[0] = WRITE_ADDR_MIN;
 	resp_args_out[1] = (XIP_BASE + PICO_FLASH_SIZE_BYTES) - WRITE_ADDR_MIN;
 	resp_args_out[2] = FLASH_SECTOR_SIZE;
