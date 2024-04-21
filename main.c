@@ -33,7 +33,7 @@
 #define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.1.03"
+#define ENV_STRING "BOOT:v2.1.04"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
