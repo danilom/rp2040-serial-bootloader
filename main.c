@@ -70,6 +70,9 @@
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
 
+// Page data to write, 4k in size
+uint8_t flash_sector_to_write[FLASH_SECTOR_SIZE] = {0};
+
 // Perf measurement
 static uint32_t _start_ms = 0;
 static uint32_t _flash_total_ms = 0;
@@ -460,12 +463,21 @@ static uint32_t handle_store(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 
 	DBG_SEND("handle_store offset: %d size: %d", offset, size);
 
-	// TODO: clear buffer if offset == 0
-	// TODO: store
-	(void)offset;
-	(void)size;
+	if (offset + size > FLASH_SECTOR_SIZE) {
+		// Outside buffer
+		return RSP_ERR;
+	}
 
-	resp_args_out[0] = 0; // modify to calc buffer length (entire, not just sent) calc_crc32((void *)addr, size);
+	if (offset == 0) {
+		// Clear buffer
+		memset(flash_sector_to_write, 0, FLASH_SECTOR_SIZE);
+	}
+
+	// Copy data
+	memcpy(flash_sector_to_write + offset, data_in, size);
+
+	// CRC of the buffer with data written so far
+	resp_args_out[0] = calc_crc32(flash_sector_to_write, FLASH_SECTOR_SIZE);
 
 	return RSP_OK;
 }
@@ -476,6 +488,12 @@ static uint32_t handle_copyEraseWrite(uint32_t *args_in, uint8_t *data_in, uint3
 	uint32_t size = args_in[1];
 
 	DBG_SEND("handle_copyEraseWrite addr: %d size: %d", addr, size);
+	DBG_SEND("Error: NOT_IMPLEMENTED");
+	
+	// Erase
+	// Write
+
+	// return CRC of written data (NOT flash_sector_to_write)
 
 	return RSP_OK;
 }
