@@ -24,6 +24,8 @@
 #include "jpo/jcomp/jcomp_protocol.h"
 #include "jpo/jcomp/debug.h"
 
+#include "stdalign.h"
+
 // Bootloader size. Must be 4k aligned. 
 // Currently, ~47k fits, but using 48k for alignment.
 // Was 12k originally. Make sure to match:
@@ -33,7 +35,7 @@
 #define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.2.00"
+#define ENV_STRING "BOOT:v3.0.00"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -57,7 +59,6 @@
 #define CMD_GO     (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
 #define CMD_INFO   (('I' << 0) | ('N' << 8) | ('F' << 16) | ('O' << 24))
 
-
 #define RSP_OK   (('O' << 0) | ('K' << 8) | ('O' << 16) | ('K' << 24))
 #define RSP_ERR  (('E' << 0) | ('R' << 8) | ('R' << 16) | ('!' << 24))
 
@@ -71,7 +72,7 @@
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
 
 // Page data to write, 4k in size
-uint8_t flash_sector_to_write[FLASH_SECTOR_SIZE] = {0};
+alignas(4) uint8_t flash_sector_to_write[FLASH_SECTOR_SIZE] = {0};
 
 // Perf measurement
 static uint32_t _start_ms = 0;
@@ -493,7 +494,9 @@ static uint32_t handle_copyEraseWrite(uint32_t *args_in, uint8_t *data_in, uint3
 	// Erase
 	// Write
 
-	// return CRC of written data (NOT flash_sector_to_write)
+	// return CRC of written data (NOT flash_sector_to_write)	
+	DBG_SEND("Error: returning CRC of flash_sector_to_write, NOT the page");
+	resp_args_out[0] = calc_crc32(flash_sector_to_write, FLASH_SECTOR_SIZE);
 
 	return RSP_OK;
 }
