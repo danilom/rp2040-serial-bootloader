@@ -373,11 +373,8 @@ static uint32_t handle_crc(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_a
 	return RSP_OK;
 }
 
-static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+static uint32_t do_erase(uint32_t addr, uint32_t size)
 {
-	uint32_t addr = args_in[0];
-	uint32_t size = args_in[1];
-
 	if ((addr < ERASE_ADDR_MIN) || (addr + size > FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
@@ -393,6 +390,13 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	_flash_total_ms += time_ms() - start_ms;
 
 	return RSP_OK;
+}
+
+static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+{
+	uint32_t addr = args_in[0];
+	uint32_t size = args_in[1];
+	return do_erase(addr, size);
 }
 
 static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
@@ -422,14 +426,19 @@ static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *
 	return RSP_OK;
 }
 
+static void do_write(uint32_t addr, uint32_t size, uint8_t* data_in)
+{
+	uint32_t start_ms = time_ms();
+	flash_range_program(addr - XIP_BASE, data_in, size);
+	_flash_total_ms += time_ms() - start_ms;
+}
+
 static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	uint32_t start_ms = time_ms();
-	flash_range_program(addr - XIP_BASE, data_in, size);
-	_flash_total_ms += time_ms() - start_ms;
+	do_write(addr, size, data_in);
 
 	resp_args_out[0] = calc_crc32((void *)addr, size);
 
@@ -441,7 +450,7 @@ static uint32_t size_store(uint32_t *args_in, uint32_t *data_len_out, uint32_t *
 	uint32_t offset = args_in[0];
 	uint32_t size   = args_in[1];
 
-	DBG_SEND("size_store offset: %d size: %d", offset, size);
+	//DBG_SEND("size_store offset: %d size: %d", offset, size);
 
 	// FLASH_SECTOR_SIZE -- erase size, 4k
 	// FLASH_PAGE_SIZE -- write size, 1k
@@ -462,7 +471,7 @@ static uint32_t handle_store(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	uint32_t offset = args_in[0];
 	uint32_t size   = args_in[1];
 
-	DBG_SEND("handle_store offset: %d size: %d", offset, size);
+	//DBG_SEND("handle_store offset: %d size: %d", offset, size);
 
 	if (offset + size > FLASH_SECTOR_SIZE) {
 		// Outside buffer
@@ -488,16 +497,32 @@ static uint32_t handle_copyEraseWrite(uint32_t *args_in, uint8_t *data_in, uint3
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	DBG_SEND("handle_copyEraseWrite addr: %d size: %d", addr, size);
-	DBG_SEND("Error: NOT_IMPLEMENTED");
+	//DBG_SEND("handle_copyEraseWrite addr: %d size: %d", addr, size);
+
+	//DBG_SEND("cewr: do_erase addr: %d size: %d", addr, size);
+	uint32_t resp = do_erase(addr, size);
+	if (resp != RSP_OK) {
+		DBG_SEND("Error: handle_copyEraseWrite addr: %d size: %d, erase failed.", addr, size);
+		return resp;
+	}
+
+	uint32_t offset = 0;
+	while (offset < size)
+	{
+		uint32_t write_size = FLASH_PAGE_SIZE;
+		if (size - offset < FLASH_PAGE_SIZE) {
+			write_size = size - offset;
+		}
+
+		//DBG_SEND("cewr write: addr: %d size: %d offset: %d", addr, write_size, offset);
+		do_write(addr + offset, write_size, flash_sector_to_write + offset);
+
+		offset += write_size;
+	}
 	
-	// Erase
-	// Write
-
-	// return CRC of written data (NOT flash_sector_to_write)	
-	DBG_SEND("Error: returning CRC of flash_sector_to_write, NOT the page");
-	resp_args_out[0] = calc_crc32(flash_sector_to_write, FLASH_SECTOR_SIZE);
-
+	// return CRC of written data (NOT flash_sector_to_write)
+	resp_args_out[0] = calc_crc32((void *)addr, size);
+	
 	return RSP_OK;
 }
 
