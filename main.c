@@ -761,7 +761,9 @@ int main(void)
 	}
 
 	init_serial();
-	jcomp_init();
+
+	// HACK: do not call radio::init, as it causes the bootloader not to show up as port
+	jcomp_init_no_radio();
 	jcomp_set_env_type(ENV_STRING);
 
 	struct cmd_context ctx;
