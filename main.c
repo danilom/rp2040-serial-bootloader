@@ -24,6 +24,8 @@
 #include "jpo/jcomp/jcomp_protocol.h"
 #include "jpo/jcomp/debug.h"
 
+#include "stdalign.h"
+
 // Bootloader size. Must be 4k aligned. 
 // Currently, ~47k fits, but using 48k for alignment.
 // Was 12k originally. Make sure to match:
@@ -33,7 +35,7 @@
 #define BOOTLOADER_SIZE_KB 48
 
 // BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v2.1.05"
+#define ENV_STRING "BOOT:v3.0.00"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -49,8 +51,8 @@
 #define CMD_READ   (('R' << 0) | ('E' << 8) | ('A' << 16) | ('D' << 24))
 #define CMD_CSUM   (('C' << 0) | ('S' << 8) | ('U' << 16) | ('M' << 24))
 #define CMD_CRC    (('C' << 0) | ('R' << 8) | ('C' << 16) | ('C' << 24))
-#define CMD_ERASE  (('E' << 0) | ('R' << 8) | ('A' << 16) | ('S' << 24))
-#define CMD_WRITE  (('W' << 0) | ('R' << 8) | ('I' << 16) | ('T' << 24))
+#define CMD_STORE  (('S' << 0) | ('T' << 8) | ('O' << 16) | ('R' << 24)) // jpo
+#define CMD_CEWR   (('C' << 0) | ('E' << 8) | ('W' << 16) | ('R' << 24)) // jpo
 #define CMD_SEAL   (('S' << 0) | ('E' << 8) | ('A' << 16) | ('L' << 24))
 #define CMD_GO     (('G' << 0) | ('O' << 8) | ('G' << 16) | ('O' << 24))
 #define CMD_INFO   (('I' << 0) | ('N' << 8) | ('F' << 16) | ('O' << 24))
@@ -66,6 +68,12 @@
 #define WRITE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET + FLASH_SECTOR_SIZE)
 #define ERASE_ADDR_MIN (XIP_BASE + IMAGE_HEADER_OFFSET)
 #define FLASH_ADDR_MAX (XIP_BASE + PICO_FLASH_SIZE_BYTES)
+
+// Page data to write, 4k in size
+alignas(4) uint8_t flash_sector_to_write[FLASH_SECTOR_SIZE] = {0};
+
+// Maximum size in JCOMP, minus bytes for the opcode/addr/len args
+#define MAX_DATA_LEN (JCOMP_MAX_PAYLOAD_SIZE - 12)
 
 // Perf measurement
 static uint32_t _start_ms = 0;
@@ -114,9 +122,9 @@ static uint32_t size_csum(uint32_t *args_in, uint32_t *data_len_out, uint32_t *r
 static uint32_t handle_csum(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t size_crc(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
 static uint32_t handle_crc(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
-static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
-static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
-static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
+static uint32_t size_store(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out);
+static uint32_t handle_store(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
+static uint32_t handle_copyEraseWrite(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t handle_go(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
 static uint32_t handle_info(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out);
@@ -158,22 +166,22 @@ const struct command_desc cmds[] = {
 		.handle = &handle_crc,
 	},
 	{
-		// ERAS addr len
-		// OKOK
-		.opcode = CMD_ERASE,
-		.nargs = 2,
-		.resp_nargs = 0,
-		.size = NULL,
-		.handle = &handle_erase,
-	},
-	{
-		// WRIT addr len [data]
-		// OKOK crc
-		.opcode = CMD_WRITE,
+		// STOR addr len [data]
+		// OKOK crc (of the 4k storage buffer)
+		.opcode = CMD_STORE,
 		.nargs = 2,
 		.resp_nargs = 1,
-		.size = &size_write,
-		.handle = &handle_write,
+		.size = &size_store,
+		.handle = &handle_store,
+	},
+	{
+		// CEWR addr len
+		// OKOK crc (of the written page)
+		.opcode = CMD_CEWR,
+		.nargs = 2,
+		.resp_nargs = 1,
+		.size = NULL,
+		.handle = &handle_copyEraseWrite,
 	},
 	{
 		// SEAL vtor len crc
@@ -205,7 +213,6 @@ const struct command_desc cmds[] = {
 };
 const unsigned int N_CMDS = (sizeof(cmds) / sizeof(cmds[0]));
 const uint32_t MAX_NARG = 5;
-const uint32_t MAX_DATA_LEN = 1024; //FLASH_SECTOR_SIZE;
 
 static bool is_error(uint32_t status)
 {
@@ -345,11 +352,8 @@ static uint32_t handle_crc(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_a
 	return RSP_OK;
 }
 
-static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+static uint32_t do_erase(uint32_t addr, uint32_t size)
 {
-	uint32_t addr = args_in[0];
-	uint32_t size = args_in[1];
-
 	if ((addr < ERASE_ADDR_MIN) || (addr + size > FLASH_ADDR_MAX)) {
 		// Outside flash
 		return RSP_ERR;
@@ -367,26 +371,27 @@ static uint32_t handle_erase(uint32_t *args_in, uint8_t *data_in, uint32_t *resp
 	return RSP_OK;
 }
 
-static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
+static void do_write(uint32_t addr, uint32_t size, uint8_t* data_in)
 {
-	uint32_t addr = args_in[0];
-	uint32_t size = args_in[1];
+	uint32_t start_ms = time_ms();
+	flash_range_program(addr - XIP_BASE, data_in, size);
+	_flash_total_ms += time_ms() - start_ms;
+}
 
-	if ((addr < WRITE_ADDR_MIN) || (addr + size > FLASH_ADDR_MAX)) {
-		// Outside flash
+static uint32_t size_store(uint32_t *args_in, uint32_t *data_len_out, uint32_t *resp_data_len_out)
+{
+	uint32_t offset = args_in[0];
+	uint32_t size   = args_in[1];
+
+	//DBG_SEND("size_store offset: %d size: %d", offset, size);
+
+	// FLASH_SECTOR_SIZE -- erase size, 4k
+	// FLASH_PAGE_SIZE -- write size, 1k
+
+	if (offset + size > FLASH_SECTOR_SIZE) {
+		// Outside buffer
 		return RSP_ERR;
 	}
-
-	if ((addr & (FLASH_PAGE_SIZE - 1)) || (size & (FLASH_PAGE_SIZE -1))) {
-		// Must be aligned
-		return RSP_ERR;
-	}
-
-	if (size > MAX_DATA_LEN) {
-		return RSP_ERR;
-	}
-
-	// TODO: Validate address
 
 	*data_len_out = size;
 	*resp_data_len_out = 0;
@@ -394,17 +399,63 @@ static uint32_t size_write(uint32_t *args_in, uint32_t *data_len_out, uint32_t *
 	return RSP_OK;
 }
 
-static uint32_t handle_write(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+static uint32_t handle_store(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
+{
+	uint32_t offset = args_in[0];
+	uint32_t size   = args_in[1];
+
+	//DBG_SEND("handle_store offset: %d size: %d", offset, size);
+
+	if (offset + size > FLASH_SECTOR_SIZE) {
+		// Outside buffer
+		return RSP_ERR;
+	}
+
+	if (offset == 0) {
+		// Clear buffer
+		memset(flash_sector_to_write, 0, FLASH_SECTOR_SIZE);
+	}
+
+	// Copy data
+	memcpy(flash_sector_to_write + offset, data_in, size);
+
+	// CRC of the buffer with data written so far
+	resp_args_out[0] = calc_crc32(flash_sector_to_write, FLASH_SECTOR_SIZE);
+
+	return RSP_OK;
+}
+
+static uint32_t handle_copyEraseWrite(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_args_out, uint8_t *resp_data_out)
 {
 	uint32_t addr = args_in[0];
 	uint32_t size = args_in[1];
 
-	uint32_t start_ms = time_ms();
-	flash_range_program(addr - XIP_BASE, data_in, size);
-	_flash_total_ms += time_ms() - start_ms;
+	//DBG_SEND("handle_copyEraseWrite addr: %d size: %d", addr, size);
 
+	//DBG_SEND("cewr: do_erase addr: %d size: %d", addr, size);
+	uint32_t resp = do_erase(addr, size);
+	if (resp != RSP_OK) {
+		DBG_SEND("Error: handle_copyEraseWrite addr: %d size: %d, erase failed.", addr, size);
+		return resp;
+	}
+
+	uint32_t offset = 0;
+	while (offset < size)
+	{
+		uint32_t write_size = FLASH_PAGE_SIZE;
+		if (size - offset < FLASH_PAGE_SIZE) {
+			write_size = size - offset;
+		}
+
+		//DBG_SEND("cewr write: addr: %d size: %d offset: %d", addr, write_size, offset);
+		do_write(addr + offset, write_size, flash_sector_to_write + offset);
+
+		offset += write_size;
+	}
+	
+	// return CRC of written data (NOT flash_sector_to_write)
 	resp_args_out[0] = calc_crc32((void *)addr, size);
-
+	
 	return RSP_OK;
 }
 
@@ -472,7 +523,6 @@ static uint32_t handle_seal(uint32_t *args_in, uint8_t *data_in, uint32_t *resp_
 	// Perf info
 	uint32_t total_ms = time_ms() - _start_ms;
 	DBG_SEND("time (ms): total: %d flash: %d", total_ms, _flash_total_ms);
-
 
 	return RSP_OK;
 }
@@ -546,14 +596,14 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	pos += size;
 
 	if (err) {
-		DBG_SEND("Failed to read opcode: %d", err);
+		DBG_SEND("Error: Failed to read opcode: %d", err);
 		return err;
 	}
 
 	// Read args: state_read_args(ctx)
 	const struct command_desc *desc = find_command_desc(ctx->opcode);
 	if (!desc) {
-		DBG_SEND("Failed to find cmd desc for opcode: %d", ctx->opcode);
+		DBG_SEND("Error: Failed to find cmd desc for opcode: %d", ctx->opcode);
 		//X TODO: Error handler that can do args?
 		ctx->status = RSP_ERR;
 		return JCOMP_ERR_BOOTLOADER;
@@ -573,7 +623,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	pos += size;
 
 	if (err) {
-		DBG_SEND("Failed to read args: %d", err);
+		DBG_SEND("Error: Failed to read args: %d", err);
 		return err;
 	}
 
@@ -582,7 +632,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	if (desc->size) {
 		ctx->status = desc->size(ctx->args, &ctx->data_len, &ctx->resp_data_len);
 		if (is_error(ctx->status)) {
-			DBG_SEND("Failed to find data size, ctx->status: %d", ctx->status);
+			DBG_SEND("Error: Failed to find data size, ctx->status: %d", ctx->status);
 			return JCOMP_ERR_BOOTLOADER;
 		}
 	} else {
@@ -599,7 +649,7 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 	pos += size;
 
 	if (err) {
-		DBG_SEND("Failed to read data: %d", err);
+		DBG_SEND("Error: Failed to read data: %d", err);
 		return err;
 	}
 
@@ -609,12 +659,12 @@ static JCOMP_RV read_message(struct cmd_context *ctx, JCOMP_MSG in_msg)
 static JCOMP_RV send_response_core(JCOMP_MSG resp, const uint8_t* payload, size_t len) {
 	JCOMP_RV err = jcomp_msg_set_bytes(resp, 0, payload, len);
 	if (err) {
-		DBG_SEND("ERROR: failed to set response bytes: %d", err);
+		DBG_SEND("Error: Failed to set response bytes: %d", err);
 		return err;
 	}
 	err = jcomp_send_msg(resp);
 	if (err) {
-		DBG_SEND("ERROR: failed to send response: %d", err);
+		DBG_SEND("Error: Failed to send response: %d", err);
 		return err;
 	}
 	return JCOMP_OK;
@@ -622,7 +672,7 @@ static JCOMP_RV send_response_core(JCOMP_MSG resp, const uint8_t* payload, size_
 static JCOMP_RV send_response(uint8_t request_id, const uint8_t* payload, size_t len) {
 	JCOMP_CREATE_RESPONSE(resp, request_id, len);
 	if (!resp) {
-		DBG_SEND("ERROR: failed to create response");
+		DBG_SEND("Error: Failed to create response");
 		return JCOMP_ERR_BOOTLOADER;
 	}
 	JCOMP_RV err = send_response_core(resp, payload, len);
@@ -642,7 +692,7 @@ static JCOMP_RV handle_data(struct cmd_context *ctx, uint8_t request_id)
 	if (desc->handle) {
 		ctx->status = desc->handle(ctx->args, ctx->data, ctx->resp_args, ctx->resp_data);
 		if (is_error(ctx->status)) {
-			DBG_SEND("Failed to handle data, ctx->status: 0x%x", ctx->status);
+			DBG_SEND("Error: Failed to handle data, ctx->status: 0x%x", ctx->status);
 			return JCOMP_ERR_BOOTLOADER;
 		}
 	} else {
@@ -669,13 +719,13 @@ static bool should_stay_in_bootloader()
 void process_message(struct cmd_context *ctx, JCOMP_MSG in_msg) {
 	JCOMP_RV err = read_message(ctx, in_msg);
 	if (err) {
-		DBG_SEND("Failed to read message rv: %d", err);
+		DBG_SEND("Error: Failed to read message rv: %d", err);
 		send_error(jcomp_msg_id(in_msg));
 		return;
 	}
 	err = handle_data(ctx, jcomp_msg_id(in_msg));
 	if (err) {
-		DBG_SEND("Failed to handle data rv: %d", err);
+		DBG_SEND("Error: Failed to handle data rv: %d", err);
 		send_error(jcomp_msg_id(in_msg));
 		return;
 	}
