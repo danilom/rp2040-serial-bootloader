@@ -70,10 +70,12 @@ message("JPO_PATH (from environment) is ${JPO_PATH}")
 
 ### Includes
 target_include_directories(${PROJECT_NAME}
+	PRIVATE "${JPO_PATH}/sdk/hal/include" # needed?
 	PRIVATE "${JPO_PATH}/sdk/jcomp/include"
 	PRIVATE "${JPO_PATH}/sdk/jcomp/protocol/include" # protocol
 )
 target_link_directories(${PROJECT_NAME}
+	PRIVATE "${JPO_PATH}/sdk/build/hal" # needed?
 	PRIVATE "${JPO_PATH}/sdk/build/jcomp"
 	PRIVATE "${JPO_PATH}/sdk/build/jcomp/protocol" # protocol
 )
@@ -105,6 +107,7 @@ target_link_libraries(jpo_bootloader
                       hardware_structs
                       hardware_resets
                       cmsis_core
+					  jpo_hal # needed?
 					  jpo_jcomp
 					  jpo_jcomp_protocol
 					  )

@@ -21,6 +21,7 @@
 #include "pico/bootrom.h"
 #include "pico/time.h" // Perf measurement
 
+#include "jpo/hal.h" // needed?
 #include "jpo/jcomp/jcomp_protocol.h"
 #include "jpo/jcomp/debug.h"
 
@@ -732,7 +733,8 @@ void process_message(struct cmd_context *ctx, JCOMP_MSG in_msg) {
 	// Done
 }
 
-void init_serial(void) {
+/*
+static void init_serial(void) {
     // USB
 	// BUG FIX: delay mitigates the "Open (SetCommState): Unknown error code 31" bug,
 	// which requires the user to physically reset the brain. 
@@ -742,6 +744,7 @@ void init_serial(void) {
 	sleep_ms(500);
 	stdio_init_all();
 }
+*/
 
 int main(void)
 {
@@ -760,11 +763,15 @@ int main(void)
 		jump_to_vtor(vtor);
 	}
 
-	init_serial();
+	hal_init();
 
 	// HACK: do not call radio::init, as it causes the bootloader not to show up as port
-	jcomp_init_no_radio();
+	//init_serial();
+	//jcomp_init_no_radio();
+
 	jcomp_set_env_type(ENV_STRING);
+
+
 
 	struct cmd_context ctx;
 	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
