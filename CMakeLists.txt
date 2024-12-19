@@ -183,3 +183,12 @@ add_custom_command(
 	COMMAND ${CMAKE_COMMAND} -E copy
 			"${CMAKE_CURRENT_BINARY_DIR}/jpo_bootloader.uf2"
 			"${JPO_PATH}/resources/bin/jpo_bootloader.uf2")
+
+# Generate version files with arguments
+set(H_PATH "${CMAKE_CURRENT_SOURCE_DIR}/version.h")
+set(TXT_PATH "${JPO_PATH}/resources/bin/jpo_bootloader_version.txt")
+add_custom_target(generate_version ALL
+    COMMAND ${CMAKE_COMMAND} -DH_PATH=${H_PATH} -DTXT_PATH=${TXT_PATH} -P ${JPO_PATH}/resources/build_config/jpo_version.cmake
+)
+add_dependencies(${PROJECT_NAME} generate_version)
+

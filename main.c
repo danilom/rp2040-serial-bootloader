@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "version.h"
+
 #include "RP2040.h"
 #include "pico/time.h"
 #include "hardware/dma.h"
@@ -33,9 +35,6 @@
 // 2) jpo-software/resources/build_config/jpo_bootloadable.ld
 // 3) danilom_micropython/ports/rp2/jpo_memmap_mp.ld
 #define BOOTLOADER_SIZE_KB 48
-
-// BOOT followed by additional info like the version
-#define ENV_STRING "BOOT:v3.0.2"
 
 // The bootloader can be entered in three ways:
 //  - BOOTLOADER_ENTRY_PIN is low
@@ -763,7 +762,7 @@ int main(void)
 	init_serial();
 
 	jcomp_init();
-	jcomp_set_env_type(ENV_STRING);
+	jcomp_set_env_type("BOOT:" VERSION_TIMESTAMP);
 
 	struct cmd_context ctx;
 	uint8_t uart_buf[(sizeof(uint32_t) * (1 + MAX_NARG)) + MAX_DATA_LEN];
